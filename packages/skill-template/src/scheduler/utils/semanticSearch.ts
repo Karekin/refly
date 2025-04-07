@@ -27,22 +27,25 @@ import {
 } from './constants';
 import { Source } from '@refly-packages/openapi-schema';
 
-// TODO:替换成实际的 Chunk 定义，然后进行拼接，拼接时包含元数据和分隔符
+// TODO: 替换成实际的 Chunk 定义，然后进行拼接，拼接时包含元数据和分隔符
+// 拼接内容片段，按元数据中的 start 属性排序（如果有）
 export function assembleChunks(chunks: DocumentInterface[] = []): string {
-  // if chunks has metadata.start, sort by start
+  // 如果片段有元数据中的 start 属性，按 start 属性排序
   if (chunks?.[0]?.metadata?.start) {
     chunks.sort((a, b) => a.metadata.start - b.metadata.start);
   }
 
+  // 拼接所有片段的内容，用 '\n [...] \n' 作为分隔符
   return chunks.map((chunk) => chunk.pageContent).join('\n [...] \n');
 }
 
+// 根据查询和内容片段的相似度对内容片段进行排序
 export async function sortContentBySimilarity(
   query: string,
   contentList: SkillContextContentItem[],
   ctx: { config: SkillRunnableConfig; ctxThis: BaseSkill; state: GraphState },
 ): Promise<SkillContextContentItem[]> {
-  // 1. construct documents
+  // 1. 构造文档对象，用于相似度计算
   const documents: Document<NodeMeta>[] = contentList.map((item) => {
     return {
       pageContent: truncateTextWithToken(item.content, MAX_NEED_RECALL_CONTENT_TOKEN),
@@ -54,7 +57,7 @@ export async function sortContentBySimilarity(
     };
   });
 
-  // 2. index documents
+  // 2. 使用内存搜索服务对文档进行索引和排序
   const res = await ctx.ctxThis.engine.service.inMemorySearchWithIndexing(
     ctx.config.configurable.user,
     {
@@ -66,7 +69,7 @@ export async function sortContentBySimilarity(
   );
   const sortedContent = res.data;
 
-  // 4. return sorted content
+  // 4. 返回排序后的内容片段
   return sortedContent.map((item) => ({
     content: item.pageContent,
     metadata: {
@@ -75,12 +78,13 @@ export async function sortContentBySimilarity(
   }));
 }
 
+// 根据查询和文档的相似度对文档进行排序
 export async function sortDocumentsBySimilarity(
   query: string,
   comingDocuments: SkillContextDocumentItem[],
   ctx: { config: SkillRunnableConfig; ctxThis: BaseSkill; state: GraphState },
 ): Promise<SkillContextDocumentItem[]> {
-  // 1. construct documents
+  // 1. 构造文档对象，用于相似度计算
   const documents: Document<NodeMeta>[] = comingDocuments.map((item) => {
     return {
       pageContent: truncateTextWithToken(item.document?.content || '', MAX_NEED_RECALL_TOKEN),
@@ -93,7 +97,7 @@ export async function sortDocumentsBySimilarity(
     };
   });
 
-  // 2. index documents
+  // 2. 使用内存搜索服务对文档进行索引和排序
   const res = await ctx.ctxThis.engine.service.inMemorySearchWithIndexing(
     ctx.config.configurable.user,
     {
@@ -105,7 +109,7 @@ export async function sortDocumentsBySimilarity(
   );
   const sortedDocuments = res.data;
 
-  // 4. return sorted documents
+  // 4. 返回排序后的文档
   return sortedDocuments
     .map((item) =>
       comingDocuments.find((document) => document.document?.docId === item.metadata.docId),
@@ -113,12 +117,13 @@ export async function sortDocumentsBySimilarity(
     .filter((document): document is SkillContextDocumentItem => document !== undefined);
 }
 
+// 根据查询和资源的相似度对资源进行排序
 export async function sortResourcesBySimilarity(
   query: string,
   resources: SkillContextResourceItem[],
   ctx: { config: SkillRunnableConfig; ctxThis: BaseSkill; state: GraphState },
 ): Promise<SkillContextResourceItem[]> {
-  // 1. construct documents
+  // 1. 构造文档对象，用于相似度计算
   const documents: Document<NodeMeta>[] = resources.map((item) => {
     return {
       pageContent: truncateTextWithToken(item.resource?.content || '', MAX_NEED_RECALL_TOKEN),
@@ -131,7 +136,7 @@ export async function sortResourcesBySimilarity(
     };
   });
 
-  // 2. index documents
+  // 2. 使用内存搜索服务对文档进行索引和排序
   const res = await ctx.ctxThis.engine.service.inMemorySearchWithIndexing(
     ctx.config.configurable.user,
     {
@@ -143,7 +148,7 @@ export async function sortResourcesBySimilarity(
   );
   const sortedResources = res.data;
 
-  // 4. return sorted resources
+  // 4. 返回排序后的资源
   return sortedResources
     .map((item) =>
       resources.find((resource) => resource.resource?.resourceId === item.metadata.resourceId),
@@ -151,28 +156,31 @@ export async function sortResourcesBySimilarity(
     .filter((resource): resource is SkillContextResourceItem => resource !== undefined);
 }
 
+// 根据相似度处理选定的内容片段，控制 token 数量
 export async function processSelectedContentWithSimilarity(
   query: string,
   contentList: SkillContextContentItem[],
   maxTokens: number,
   ctx: { config: SkillRunnableConfig; ctxThis: BaseSkill; state: GraphState },
 ): Promise<SkillContextContentItem[]> {
+  // 计算用于相关内容的最大 token 数量
   const MAX_RAG_RELEVANT_CONTENT_MAX_TOKENS = Math.floor(
     maxTokens * MAX_RAG_RELEVANT_CONTENT_RATIO,
   );
+  // 计算用于短内容的最大 token 数量
   const _MAX_SHORT_CONTENT_MAX_TOKENS = Math.floor(maxTokens * MAX_SHORT_CONTENT_RATIO);
 
   if (contentList.length === 0) {
     return [];
   }
 
-  // 1. calculate similarity and sort
+  // 1. 计算相似度并排序
   const sortedContent: SkillContextContentItem[] = contentList;
 
   const result: SkillContextContentItem[] = [];
   let usedTokens = 0;
 
-  // 2. 按相关度顺序处理 content
+  // 2. 按相关度顺序处理内容片段
   for (const content of sortedContent) {
     const contentTokens = countToken(content.content);
 
@@ -204,7 +212,7 @@ export async function processSelectedContentWithSimilarity(
     if (usedTokens >= MAX_RAG_RELEVANT_CONTENT_MAX_TOKENS) break;
   }
 
-  // 3. 处理剩余的 content
+  // 3. 处理剩余的内容片段
   for (let i = result.length; i < sortedContent.length; i++) {
     const remainingContent = sortedContent[i];
     const contentTokens = countToken(remainingContent.content);
@@ -239,22 +247,25 @@ export async function processSelectedContentWithSimilarity(
   return result;
 }
 
+// 根据相似度处理文档，控制 token 数量
 export async function processDocumentsWithSimilarity(
   query: string,
   comingDocuments: SkillContextDocumentItem[],
   maxTokens: number,
   ctx: { config: SkillRunnableConfig; ctxThis: BaseSkill; state: GraphState },
 ): Promise<SkillContextDocumentItem[]> {
+  // 计算用于相关文档的最大 token 数量
   const MAX_RAG_RELEVANT_DOCUMENTS_MAX_TOKENS = Math.floor(
     maxTokens * MAX_RAG_RELEVANT_DOCUMENTS_RATIO,
   );
+  // 计算用于短文档的最大 token 数量
   const _MAX_SHORT_DOCUMENTS_MAX_TOKENS = Math.floor(maxTokens * MAX_SHORT_DOCUMENTS_RATIO);
 
   if (comingDocuments.length === 0) {
     return [];
   }
 
-  // 1. calculate similarity and sort
+  // 1. 计算相似度并排序
   let sortedDocuments: SkillContextDocumentItem[] = [];
   if (comingDocuments.length > 1) {
     sortedDocuments = await sortDocumentsBySimilarity(query, comingDocuments, ctx);
@@ -265,7 +276,7 @@ export async function processDocumentsWithSimilarity(
   const result: SkillContextDocumentItem[] = [];
   let usedTokens = 0;
 
-  // 2. 按相关度顺序处理 document
+  // 2. 按相关度顺序处理文档
   for (const document of sortedDocuments) {
     const documentTokens = countToken(document?.document?.content || '');
 
@@ -290,7 +301,7 @@ export async function processDocumentsWithSimilarity(
         ctx,
       );
 
-      // If knowledge base search returns empty results, fallback to in-memory search
+      // 如果知识库搜索返回空结果，回退到内存搜索
       if (!relevantChunks || relevantChunks.length === 0) {
         relevantChunks = await inMemoryGetRelevantChunks(
           query,
@@ -319,7 +330,7 @@ export async function processDocumentsWithSimilarity(
     if (usedTokens >= MAX_RAG_RELEVANT_DOCUMENTS_MAX_TOKENS) break;
   }
 
-  // 3. 处理剩余的 document
+  // 3. 处理剩余的文档
   for (let i = result.length; i < sortedDocuments.length; i++) {
     const remainingDocument = sortedDocuments[i];
     const documentTokens = countToken(remainingDocument?.document?.content || '');
@@ -346,7 +357,7 @@ export async function processDocumentsWithSimilarity(
         ctx,
       );
 
-      // If knowledge base search returns empty results, fallback to in-memory search
+      // 如果知识库搜索返回空结果，回退到内存搜索
       if (!relevantChunks || relevantChunks.length === 0) {
         relevantChunks = await inMemoryGetRelevantChunks(
           query,
@@ -373,22 +384,25 @@ export async function processDocumentsWithSimilarity(
   return result;
 }
 
+// 根据相似度处理资源，控制 token 数量
 export async function processResourcesWithSimilarity(
   query: string,
   resources: SkillContextResourceItem[],
   maxTokens: number,
   ctx: { config: SkillRunnableConfig; ctxThis: BaseSkill; state: GraphState },
 ): Promise<SkillContextResourceItem[]> {
+  // 计算用于相关资源的最大 token 数量
   const MAX_RAG_RELEVANT_RESOURCES_MAX_TOKENS = Math.floor(
     maxTokens * MAX_RAG_RELEVANT_RESOURCES_RATIO,
   );
+  // 计算用于短资源的最大 token 数量
   const _MAX_SHORT_RESOURCES_MAX_TOKENS = Math.floor(maxTokens * MAX_SHORT_RESOURCES_RATIO);
 
   if (resources.length === 0) {
     return [];
   }
 
-  // 1. calculate similarity and sort
+  // 1. 计算相似度并排序
   let sortedResources: SkillContextResourceItem[] = [];
   if (resources.length > 1) {
     sortedResources = await sortResourcesBySimilarity(query, resources, ctx);
@@ -399,7 +413,7 @@ export async function processResourcesWithSimilarity(
   const result: SkillContextResourceItem[] = [];
   let usedTokens = 0;
 
-  // 2. 按相关度顺序处理 resources
+  // 2. 按相关度顺序处理资源
   for (const resource of sortedResources) {
     const resourceTokens = countToken(resource?.resource?.content || '');
 
@@ -420,7 +434,7 @@ export async function processResourcesWithSimilarity(
         ctx,
       );
 
-      // If knowledge base search returns empty results, fallback to in-memory search
+      // 如果知识库搜索返回空结果，回退到内存搜索
       if (!relevantChunks || relevantChunks.length === 0) {
         relevantChunks = await inMemoryGetRelevantChunks(
           query,
@@ -449,8 +463,7 @@ export async function processResourcesWithSimilarity(
     if (usedTokens >= MAX_RAG_RELEVANT_RESOURCES_MAX_TOKENS) break;
   }
 
-  // 3. 处理剩余的 resources，目前考虑所有资源，等实际运行看是否存在超出的
-  // for (let i = result.length; i < sortedResources.length && usedTokens < maxTokens; i++) {
+  // 3. 处理剩余的资源
   for (let i = result.length; i < sortedResources.length; i++) {
     const remainingResource = sortedResources[i];
     const resourceTokens = countToken(remainingResource?.resource?.content || '');
@@ -477,7 +490,7 @@ export async function processResourcesWithSimilarity(
         ctx,
       );
 
-      // If knowledge base search returns empty results, fallback to in-memory search
+      // 如果知识库搜索返回空结果，回退到内存搜索
       if (!relevantChunks || relevantChunks.length === 0) {
         relevantChunks = await inMemoryGetRelevantChunks(
           query,
@@ -504,16 +517,19 @@ export async function processResourcesWithSimilarity(
   return result;
 }
 
+// 根据相似度处理提到的上下文，控制 token 数量
 export async function processMentionedContextWithSimilarity(
   query: string,
   mentionedContext: IContext,
   maxTokens: number,
   ctx: { config: SkillRunnableConfig; ctxThis: BaseSkill; state: GraphState },
 ): Promise<IContext> {
+  // 设置内容、资源和文档的最大 token 比例
   const MAX_CONTENT_RAG_RELEVANT_RATIO = 0.4;
   const MAX_RESOURCE_RAG_RELEVANT_RATIO = 0.3;
   const MAX_DOCUMENT_RAG_RELEVANT_RATIO = 0.3;
 
+  // 计算每种类型的最大 token 数量
   const MAX_CONTENT_RAG_RELEVANT_MAX_TOKENS = Math.floor(
     maxTokens * MAX_CONTENT_RAG_RELEVANT_RATIO,
   );
@@ -557,13 +573,14 @@ export async function processMentionedContextWithSimilarity(
   };
 }
 
+// 从知识库中检索相关的片段
 export async function knowledgeBaseSearchGetRelevantChunks(
   query: string,
   metadata: { entities: Entity[]; domains: SearchDomain[]; limit: number },
   ctx: { config: SkillRunnableConfig; ctxThis: BaseSkill; state: GraphState },
 ): Promise<DocumentInterface[]> {
   try {
-    // 1. search relevant chunks
+    // 1. 搜索功能，检索相关的片段
     const res = await ctx.ctxThis.engine.service.search(
       ctx.config.configurable.user,
       {
@@ -587,13 +604,14 @@ export async function knowledgeBaseSearchGetRelevantChunks(
 
     return relevantChunks || [];
   } catch (error) {
-    // If search fails, log error and return empty array as fallback
+    // 如果检索失败，记录错误并返回空数组
     ctx.ctxThis.engine.logger.error(`Error in knowledgeBaseSearchGetRelevantChunks: ${error}`);
     return [];
   }
 }
 
 // TODO: 召回有问题，需要优化
+// 从内存中检索相关的片段
 export async function inMemoryGetRelevantChunks(
   query: string,
   content: string,
@@ -601,7 +619,7 @@ export async function inMemoryGetRelevantChunks(
   ctx: { config: SkillRunnableConfig; ctxThis: BaseSkill; state: GraphState },
 ): Promise<DocumentInterface[]> {
   try {
-    // 1. 获取 relevantChunks
+    // 1. 获取相关的片段
     const doc: Document<NodeMeta> = {
       pageContent: content,
       metadata: {
@@ -627,10 +645,10 @@ export async function inMemoryGetRelevantChunks(
 
     return relevantChunks;
   } catch (error) {
-    // If vector processing fails, return truncated content as fallback
+    // 如果向量处理失败，返回截断后的内容
     ctx.ctxThis.engine.logger.error(`Error in inMemoryGetRelevantChunks: ${error}`);
 
-    // Provide truncated content as fallback
+    // 提供截断后的内容作为回退
     const truncatedContent = truncateTextWithToken(content, MAX_NEED_RECALL_TOKEN);
     return [
       {
@@ -646,6 +664,7 @@ export async function inMemoryGetRelevantChunks(
   }
 }
 
+// 截断片段，使其不超过指定的 token 数量
 export function truncateChunks(
   chunks: DocumentInterface[],
   maxTokens: number,
@@ -666,14 +685,15 @@ export function truncateChunks(
   return result;
 }
 
+// 根据相似度处理 URL 来源，控制 token 数量
 export async function processUrlSourcesWithSimilarity(
   query: string,
   urlSources: Source[],
   maxTokens: number,
   ctx: { config: SkillRunnableConfig; ctxThis: BaseSkill; state: GraphState },
 ): Promise<Source[]> {
-  // set the appropriate maximum token ratio, similar to the processing of contentList
-  const MAX_RAG_RELEVANT_URLS_RATIO = 0.7; // 70% of tokens used for high-related URL content
+  // 设置 URL 来源的最大 token 比例
+  const MAX_RAG_RELEVANT_URLS_RATIO = 0.7; // 70% 的 token 用于高相关的内容
   const MAX_RAG_RELEVANT_URLS_MAX_TOKENS = Math.floor(maxTokens * MAX_RAG_RELEVANT_URLS_RATIO);
 
   if (urlSources.length === 0) {
@@ -684,12 +704,12 @@ export async function processUrlSourcesWithSimilarity(
   let usedTokens = 0;
   const sortedSources = urlSources;
 
-  // 2. process URL sources in order of relevance
+  // 2. 按相关度顺序处理 URL 来源
   for (const source of sortedSources) {
     const sourceTokens = countToken(source.pageContent || '');
 
     if (sourceTokens > MAX_NEED_RECALL_TOKEN) {
-      // 2.1 large content, use inMemoryGetRelevantChunks for recall
+      // 2.1 大内容，使用内存召回
       const relevantChunks = await inMemoryGetRelevantChunks(
         query,
         source?.pageContent?.slice(0, MAX_URL_SOURCES_TOKENS) || '',
@@ -707,28 +727,28 @@ export async function processUrlSourcesWithSimilarity(
       });
       usedTokens += countToken(relevantContent);
     } else if (usedTokens + sourceTokens <= MAX_RAG_RELEVANT_URLS_MAX_TOKENS) {
-      // 2.2 small content, add directly
+      // 2.2 小内容，直接添加
       result.push(source);
       usedTokens += sourceTokens;
     } else {
-      // 2.3 reach MAX_RAG_RELEVANT_URLS_MAX_TOKENS, process the remaining content
+      // 2.3 达到 MAX_RAG_RELEVANT_URLS_MAX_TOKENS，处理剩余内容
       break;
     }
 
     if (usedTokens >= MAX_RAG_RELEVANT_URLS_MAX_TOKENS) break;
   }
 
-  // 3. process the remaining URL sources
+  // 3. 处理剩余的 URL 来源
   for (let i = result.length; i < sortedSources.length; i++) {
     const remainingSource = sortedSources[i];
     const sourceTokens = countToken(remainingSource.pageContent || '');
 
-    // all short content added directly
+    // 所有的短内容直接添加
     if (sourceTokens < SHORT_CONTENT_THRESHOLD) {
       result.push(remainingSource);
       usedTokens += sourceTokens;
     } else {
-      // remaining long content use inMemoryGetRelevantChunks for recall
+      // 剩下的长内容使用内存召回
       const remainingTokens = maxTokens - usedTokens;
       let relevantChunks = await inMemoryGetRelevantChunks(
         query,
@@ -752,6 +772,7 @@ export async function processUrlSourcesWithSimilarity(
     if (usedTokens >= maxTokens) break;
   }
 
+  // 记录处理的 URL 来源数量
   ctx.ctxThis.engine.logger.log(`Processed URL sources: ${result.length} of ${urlSources.length}`);
   return result;
 }

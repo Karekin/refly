@@ -3,7 +3,7 @@ services:
     container_name: refly_db
     image: postgres:16-alpine
     ports:
-      - 5435:5432
+      - 5432:5432
     restart: always
     volumes:
       - db_data:/var/lib/postgresql/data
@@ -25,8 +25,8 @@ services:
     command: server /data --console-address ":9001"
     restart: always
     ports:
-      - 9002:9000
-      - 9003:9001
+      - 9000:9000
+      - 9001:9001
     volumes:
       - minio_data:/data
     environment:
@@ -45,7 +45,7 @@ services:
     image: redis/redis-stack:latest
     restart: always
     ports:
-      - 6381:6379
+      - 6379:6379
       - 8001:8001
     volumes:
       - redis_data:/data
@@ -78,7 +78,7 @@ services:
     container_name: refly_elasticsearch
     image: reflyai/elasticsearch:7.10.2
     ports:
-      - 9210:9200
+      - 9200:9200
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
